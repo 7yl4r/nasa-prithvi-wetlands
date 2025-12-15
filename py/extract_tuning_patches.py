@@ -1,3 +1,45 @@
+"""
+Running this file will cut fine-tuning patches to be used with prithvi.
+
+It assumes that two .tif files have been placed in data:
+
+    SPECTRAL_FILE = 'data/planet_median_stAndrews.tif'
+    MASK_FILE = 'data/SAB2024_SVM_clean_smoothed.tif'
+
+-------------------------------------------------------------
+
+## Description of files:
+    From the SIMM Seagrass project two images are obtained of the St Andrew's sound region.
+
+    1. A seagrass classification .tif created using the mode of classifications on images taken throughout a year.
+    2. A spectral mean .tif created using the same images used to generate classifications.
+
+    The aggregations use a total of 138 images covering 2022-2024, one aggregation is created for each year.
+
+    The 2024 year is selected for creating this dataset.
+    The 2024 spectral mean image is built from 72 images.
+    This image cannot be shared due to licensing restrictions.
+
+    The seagrass image can be downloaded [here](https://usf.box.com/s/xr4zqg7vj9ynqxfn9zz0oj3r91ki66ui).
+    In addition to application of the seagrass classifier (GEE script available [here](From the SIMM Seagrass project two images are obtained of the St Andrew's sound region.
+
+    1. A seagrass classification .tif created using the mode of classifications on images taken throughout a year.
+    2. A spectral median .tif created using all Planet SuperDove images (346 images).
+
+    The spectral mean image cannot be shared due to licensing restrictions.
+    The GEE script to generate this image is [here](https://code.earthengine.google.com/de9e9e1dc344d4cf8c234b30809665b8).
+    This script will not work unless you have access to the (restricted) Planet SuperDove image collection asset.
+
+    The seagrass image for 2024 can be downloaded [here](https://usf.box.com/s/xr4zqg7vj9ynqxfn9zz0oj3r91ki66ui).
+    In addition to application of the seagrass classifier (GEE script available [here](https://code.earthengine.google.com/23d1c15a67dfbc71564b67afdf394873)), manal adjustments may have been made to improve the final product.
+
+-------------------------------------------------------------
+
+The class defined below is generic, but the only current usage is in the main section 
+at the bottom of this file.
+"""
+
+
 import numpy as np
 import rasterio
 from rasterio.windows import Window
@@ -357,17 +399,32 @@ class PrithviPatchExtractor:
     
     def create_train_val_split(self, val_fraction=0.2, random_seed=42):
         """
-        Create train/validation split and save file lists.
+        Create train/validation split with Prithvi-compatible directory structure.
+        Creates:
+        - training_chips/ and validation_chips/ subdirectories
+        - training_data.txt and validation_data.txt listing chip names
         
         Args:
             val_fraction: Fraction of data for validation (0-1)
             random_seed: Random seed for reproducibility
         """
+        import shutil
+        
         np.random.seed(random_seed)
+        
+        # Create training and validation directories
+        training_dir = self.output_dir / 'training_chips'
+        validation_dir = self.output_dir / 'validation_chips'
+        training_dir.mkdir(exist_ok=True)
+        validation_dir.mkdir(exist_ok=True)
         
         # Get all patch files
         spectral_files = sorted(self.spectral_dir.glob('patch_*_spectral.tif'))
         n_patches = len(spectral_files)
+        
+        if n_patches == 0:
+            print("Warning: No patches found to split!")
+            return
         
         # Create random split
         indices = np.arange(n_patches)
@@ -376,34 +433,66 @@ class PrithviPatchExtractor:
         n_val = int(n_patches * val_fraction)
         val_indices = set(indices[:n_val])
         
-        # Create file lists
-        train_list = []
-        val_list = []
+        # Lists for .txt files (just chip names, no extensions)
+        train_chip_names = []
+        val_chip_names = []
+        
+        print(f"\nOrganizing patches into training and validation sets...")
         
         for idx, spec_file in enumerate(spectral_files):
-            patch_id = spec_file.stem.split('_')[1]
+            patch_id = spec_file.stem.split('_')[1]  # Extract ID from 'patch_XXXXX_spectral'
             mask_file = self.mask_dir / f'patch_{patch_id}_mask.tif'
             
-            pair = {
-                'spectral': str(spec_file.relative_to(self.output_dir)),
-                'mask': str(mask_file.relative_to(self.output_dir))
-            }
+            # Create chip name (e.g., "chip_00001")
+            chip_name = f'chip_{patch_id}'
             
+            # Determine target directory
             if idx in val_indices:
-                val_list.append(pair)
+                target_dir = validation_dir
+                val_chip_names.append(chip_name)
             else:
-                train_list.append(pair)
+                target_dir = training_dir
+                train_chip_names.append(chip_name)
+            
+            # Copy/move files to appropriate directory with new naming
+            # Copy spectral bands
+            target_spectral = target_dir / f'{chip_name}_merged.tif'
+            shutil.copy2(spec_file, target_spectral)
+            
+            # Copy mask
+            target_mask = target_dir / f'{chip_name}_label.tif'
+            if mask_file.exists():
+                shutil.copy2(mask_file, target_mask)
         
-        # Save splits
-        with open(self.output_dir / 'train_split.json', 'w') as f:
-            json.dump(train_list, f, indent=2)
+        # Save .txt files with chip names (one per line)
+        with open(self.output_dir / 'training_data.txt', 'w') as f:
+            for chip_name in train_chip_names:
+                f.write(f'{chip_name}\n')
         
-        with open(self.output_dir / 'val_split.json', 'w') as f:
-            json.dump(val_list, f, indent=2)
+        with open(self.output_dir / 'validation_data.txt', 'w') as f:
+            for chip_name in val_chip_names:
+                f.write(f'{chip_name}\n')
         
         print(f"\nDataset split created:")
-        print(f"Training samples: {len(train_list)}")
-        print(f"Validation samples: {len(val_list)}")
+        print(f"Training samples: {len(train_chip_names)}")
+        print(f"  - Files in: {training_dir}")
+        print(f"  - List file: training_data.txt")
+        print(f"Validation samples: {len(val_chip_names)}")
+        print(f"  - Files in: {validation_dir}")
+        print(f"  - List file: validation_data.txt")
+        print(f"\nChip naming format:")
+        print(f"  - Spectral: chip_XXXXX_merged.tif")
+        print(f"  - Label: chip_XXXXX_label.tif")
+        
+        # Clean up temporary directories
+        print(f"\nCleaning up temporary directories...")
+        if self.spectral_dir.exists():
+            shutil.rmtree(self.spectral_dir)
+            print(f"  - Removed: {self.spectral_dir}")
+        if self.mask_dir.exists():
+            shutil.rmtree(self.mask_dir)
+            print(f"  - Removed: {self.mask_dir}")
+        print(f"✓ Cleanup complete!")
 
 
 if __name__ == '__main__':
