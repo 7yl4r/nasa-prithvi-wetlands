@@ -31,6 +31,7 @@ dependencies = [
     "terratorch>=0.1.3",
     "rasterio",
     "numpy",
+    "gdown",
 ]
 
 [project.optional-dependencies]
