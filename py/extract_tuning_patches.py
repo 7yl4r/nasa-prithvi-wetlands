@@ -460,7 +460,7 @@ class PrithviPatchExtractor:
             shutil.copy2(spec_file, target_spectral)
             
             # Copy mask
-            target_mask = target_dir / f'{chip_name}_label.tif'
+            target_mask = target_dir / f'{chip_name}.mask.tif'
             if mask_file.exists():
                 shutil.copy2(mask_file, target_mask)
         
@@ -482,7 +482,7 @@ class PrithviPatchExtractor:
         print(f"  - List file: validation_data.txt")
         print(f"\nChip naming format:")
         print(f"  - Spectral: chip_XXXXX_merged.tif")
-        print(f"  - Label: chip_XXXXX_label.tif")
+        print(f"  - Mask: chip_XXXXX.mask.tif")
         
         # Clean up temporary directories
         print(f"\nCleaning up temporary directories...")
