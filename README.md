@@ -44,5 +44,8 @@ tar -cvjf data/seagrass_tuning_patches.tar.bz2 data/tuning_patches
 # 4) Manually upload the file to google drive
 
 # 5) Update any links in .ipynb files to use new file ID.
+
+# 6) Copy statistics into any .ipynb files
+python py/calculate_chip_statistics.py 
 ```
 
