@@ -45,6 +45,9 @@ import rasterio
 from rasterio.windows import Window
 from pathlib import Path
 import json
+import zipfile
+import tempfile
+import shutil
 
 class PrithviPatchExtractor:
     """Extract paired patches from spectral bands and mask for Prithvi model fine-tuning."""
@@ -54,23 +57,69 @@ class PrithviPatchExtractor:
         Initialize the patch extractor.
         
         Args:
-            spectral_path: Path to spectral bands TIF file
+            spectral_path: Path to spectral bands TIF file or ZIP file containing TIF shards
             mask_path: Path to seagrass mask TIF file
             patch_size: Size of patches to extract (default 224x224 for Prithvi)
             stride: Step size between patches (default 224 for non-overlapping)
             output_dir: Directory to save extracted patches
         """
-        self.spectral_path = spectral_path
+        self.spectral_path = Path(spectral_path)
         self.mask_path = mask_path
         self.patch_size = patch_size
         self.stride = stride
         self.output_dir = Path(output_dir)
+        
+        # Check if spectral_path is a zip file
+        self.is_zip = self.spectral_path.suffix.lower() == '.zip'
+        self.temp_dir = None
+        self.spectral_files = []
+        
+        if self.is_zip:
+            print(f"Detected ZIP archive: {self.spectral_path}")
+            self._extract_zip()
+        else:
+            self.spectral_files = [self.spectral_path]
         
         # Create output directories
         self.spectral_dir = self.output_dir / 'spectral'
         self.mask_dir = self.output_dir / 'masks'
         self.spectral_dir.mkdir(parents=True, exist_ok=True)
         self.mask_dir.mkdir(parents=True, exist_ok=True)
+    
+    def _extract_zip(self):
+        """Extract TIF files from ZIP archive to temporary directory."""
+        self.temp_dir = Path(tempfile.mkdtemp(prefix='spectral_shards_'))
+        print(f"Extracting ZIP to temporary directory: {self.temp_dir}")
+        
+        with zipfile.ZipFile(self.spectral_path, 'r') as zip_ref:
+            # Get all .tif files in the archive
+            tif_files = [f for f in zip_ref.namelist() if f.lower().endswith('.tif')]
+            
+            if not tif_files:
+                raise ValueError(f"No .tif files found in {self.spectral_path}")
+            
+            print(f"Found {len(tif_files)} TIF files in archive")
+            
+            # Extract all TIF files
+            for tif_file in tif_files:
+                zip_ref.extract(tif_file, self.temp_dir)
+                extracted_path = self.temp_dir / tif_file
+                self.spectral_files.append(extracted_path)
+        
+        print(f"Extracted {len(self.spectral_files)} spectral shard files")
+    
+    def __del__(self):
+        """Cleanup temporary directory if it was created."""
+        if self.temp_dir and self.temp_dir.exists():
+            print(f"Cleaning up temporary directory: {self.temp_dir}")
+            shutil.rmtree(self.temp_dir)
+    
+    def cleanup(self):
+        """Manually cleanup temporary directory."""
+        if self.temp_dir and self.temp_dir.exists():
+            print(f"Cleaning up temporary directory: {self.temp_dir}")
+            shutil.rmtree(self.temp_dir)
+            self.temp_dir = None
         
     def _calculate_overlap_window(self, spectral_src, mask_src):
         """
@@ -195,6 +244,7 @@ class PrithviPatchExtractor:
     def extract_patches(self, min_valid_pixels=0.7, save_metadata=True):
         """
         Extract patches from both spectral and mask files.
+        Processes all spectral shards if a ZIP file was provided.
         
         Args:
             min_valid_pixels: Minimum fraction of valid (non-nodata) pixels required (0-1)
@@ -210,170 +260,239 @@ class PrithviPatchExtractor:
             'valid_patches': 0,
             'skipped_patches': 0,
             'patch_size': self.patch_size,
-            'stride': self.stride
+            'stride': self.stride,
+            'spectral_files_processed': 0
         }
         
-        with rasterio.open(self.spectral_path) as spectral_src, \
-             rasterio.open(self.mask_path) as mask_src:
-            
-            # Check if CRS match
-            if spectral_src.crs != mask_src.crs:
-                print(f"CRS mismatch detected: {spectral_src.crs} vs {mask_src.crs}")
-                print("Reprojecting mask to match spectral image...")
-                
-                # Create in-memory reprojected mask
-                mask_reprojected = np.zeros((spectral_src.height, spectral_src.width), dtype=mask_src.dtypes[0])
-                
-                reproject(
-                    source=rasterio.band(mask_src, 1),
-                    destination=mask_reprojected,
-                    src_transform=mask_src.transform,
-                    src_crs=mask_src.crs,
-                    dst_transform=spectral_src.transform,
-                    dst_crs=spectral_src.crs,
-                    resampling=Resampling.nearest
-                )
-                
-                print(f"Mask reprojected to match spectral image: {mask_reprojected.shape}")
-                height, width = spectral_src.shape
-                
-            else:
-                # If CRS match, calculate overlapping region
-                spec_base_window, mask_base_window, (height, width) = self._calculate_overlap_window(
-                    spectral_src, mask_src
-                )
-                mask_reprojected = None
-            
-            n_bands = spectral_src.count
-            
-            print(f"Extracting {self.patch_size}x{self.patch_size} patches with stride {self.stride}")
-            print(f"Number of spectral bands: {n_bands}")
-            
-            # Calculate number of patches
-            n_rows = (height - self.patch_size) // self.stride + 1
-            n_cols = (width - self.patch_size) // self.stride + 1
-            
-            print(f"Will extract up to {n_rows * n_cols} patches\n")
-            
-            patch_id = 0
-            
-            # Iterate through patch locations
-            for row_idx in range(n_rows):
-                for col_idx in range(n_cols):
-                    row_start = row_idx * self.stride
-                    col_start = col_idx * self.stride
-                    
-                    if mask_reprojected is not None:
-                        # Use reprojected mask - simple indexing
-                        spectral_window = Window(col_start, row_start, self.patch_size, self.patch_size)
-                        spectral_patch = spectral_src.read(window=spectral_window)
-                        mask_patch = mask_reprojected[
-                            row_start:row_start+self.patch_size,
-                            col_start:col_start+self.patch_size
-                        ]
-                    else:
-                        # Use overlap windows
-                        spectral_window = Window(
-                            spec_base_window.col_off + col_start,
-                            spec_base_window.row_off + row_start,
-                            self.patch_size,
-                            self.patch_size
-                        )
-                        
-                        mask_window = Window(
-                            mask_base_window.col_off + col_start,
-                            mask_base_window.row_off + row_start,
-                            self.patch_size,
-                            self.patch_size
-                        )
-                        
-                        spectral_patch = spectral_src.read(window=spectral_window)
-                        mask_patch = mask_src.read(1, window=mask_window)
-                    
-                    stats['total_patches'] += 1
-                    
-                    # Check validity (skip if too many nodata pixels)
-                    if self._is_valid_patch(spectral_patch, mask_patch, min_valid_pixels):
-                        # Save patches as GeoTIFF files
-                        spectral_filename = f'patch_{patch_id:05d}_spectral.tif'
-                        mask_filename = f'patch_{patch_id:05d}_mask.tif'
-                        
-                        # Calculate transform for this patch
-                        if mask_reprojected is not None:
-                            patch_transform = spectral_src.transform * rasterio.Affine.translation(col_start, row_start)
-                        else:
-                            patch_transform = spectral_src.transform * rasterio.Affine.translation(
-                                spec_base_window.col_off + col_start,
-                                spec_base_window.row_off + row_start
-                            )
-                        
-                        # Save spectral patch
-                        with rasterio.open(
-                            self.spectral_dir / spectral_filename,
-                            'w',
-                            driver='GTiff',
-                            height=self.patch_size,
-                            width=self.patch_size,
-                            count=spectral_patch.shape[0],
-                            dtype=spectral_patch.dtype,
-                            crs=spectral_src.crs,
-                            transform=patch_transform,
-                            compress='lzw'
-                        ) as dst:
-                            dst.write(spectral_patch)
-                        
-                        # Save mask patch
-                        with rasterio.open(
-                            self.mask_dir / mask_filename,
-                            'w',
-                            driver='GTiff',
-                            height=self.patch_size,
-                            width=self.patch_size,
-                            count=1,
-                            dtype=mask_patch.dtype,
-                            crs=spectral_src.crs,
-                            transform=patch_transform,
-                            compress='lzw'
-                        ) as dst:
-                            dst.write(mask_patch, 1)
-                        
-                        stats['valid_patches'] += 1
-                        patch_id += 1
-                        
-                        if patch_id % 100 == 0:
-                            print(f"Extracted {patch_id} valid patches...")
-                    else:
-                        stats['skipped_patches'] += 1
-            
-            # Save metadata
-            if save_metadata:
-                metadata = {
-                    'spectral_path': str(self.spectral_path),
-                    'mask_path': str(self.mask_path),
-                    'patch_size': self.patch_size,
-                    'stride': self.stride,
-                    'n_bands': n_bands,
-                    'processing_shape': [height, width],
-                    'spectral_full_shape': list(spectral_src.shape),
-                    'mask_full_shape': list(mask_src.shape),
-                    'spectral_crs': str(spectral_src.crs),
-                    'mask_crs': str(mask_src.crs),
-                    'reprojected': mask_reprojected is not None,
-                    'transform': list(spectral_src.transform)[:6],
-                    'stats': stats
-                }
-                
-                with open(self.output_dir / 'metadata.json', 'w') as f:
-                    json.dump(metadata, f, indent=2)
+        patch_id = 0
         
-        print(f"\nExtraction complete!")
+        # Open mask file once (used for all spectral shards)
+        with rasterio.open(self.mask_path) as mask_src:
+            
+            # Process each spectral file (single file or multiple shards from ZIP)
+            for shard_idx, spectral_file in enumerate(self.spectral_files):
+                print(f"\n{'='*60}")
+                print(f"Processing spectral file {shard_idx + 1}/{len(self.spectral_files)}: {spectral_file.name}")
+                print(f"{'='*60}")
+                
+                stats['spectral_files_processed'] += 1
+                
+                with rasterio.open(spectral_file) as spectral_src:
+                    # DEBUG: Read a small raw sample before any processing
+                    print(f"  DEBUG RAW DATA CHECK:")
+                    raw_sample = spectral_src.read(1, window=Window(0, 0, min(10, spectral_src.width), min(10, spectral_src.height)))
+                    print(f"    Raw 10x10 sample from (0,0): {raw_sample.flatten()[:20]}")
+                    print(f"    Raw data type: {raw_sample.dtype}")
+                    print(f"    Raw contains NaN: {np.isnan(raw_sample).any()}")
+                    print(f"    Raw unique values (first 10): {np.unique(raw_sample)[:10]}")
+                    
+                    patch_id = self._extract_patches_from_shard(
+                        spectral_src, mask_src, patch_id, min_valid_pixels, stats
+                    )
+        
+        # Save metadata
+        if save_metadata:
+            metadata = {
+                'spectral_path': str(self.spectral_path),
+                'is_zip_archive': self.is_zip,
+                'spectral_files_processed': stats['spectral_files_processed'],
+                'mask_path': str(self.mask_path),
+                'patch_size': self.patch_size,
+                'stride': self.stride,
+                'stats': stats
+            }
+            
+            with open(self.output_dir / 'metadata.json', 'w') as f:
+                json.dump(metadata, f, indent=2)
+        
+        print(f"\n{'='*60}")
+        print(f"Extraction complete!")
+        print(f"{'='*60}")
+        print(f"Spectral files processed: {stats['spectral_files_processed']}")
         print(f"Valid patches saved: {stats['valid_patches']}")
         print(f"Patches skipped: {stats['skipped_patches']}")
         print(f"Output directory: {self.output_dir}")
         
         return stats
     
-    def _is_valid_patch(self, spectral_patch, mask_patch, min_valid_fraction):
+    def _extract_patches_from_shard(self, spectral_src, mask_src, patch_id, min_valid_pixels, stats):
+        """
+        Extract patches from a single spectral shard.
+        
+        Args:
+            spectral_src: Opened rasterio spectral dataset
+            mask_src: Opened rasterio mask dataset
+            patch_id: Starting patch ID number
+            min_valid_pixels: Minimum fraction of valid pixels
+            stats: Statistics dictionary to update
+        
+        Returns:
+            Updated patch_id for next shard
+        """
+        from rasterio.warp import reproject, Resampling
+        
+        # Check if CRS match
+        if spectral_src.crs != mask_src.crs:
+            print(f"CRS mismatch detected: {spectral_src.crs} vs {mask_src.crs}")
+            print("Reprojecting mask to match spectral image...")
+            
+            # Create in-memory reprojected mask
+            mask_reprojected = np.zeros((spectral_src.height, spectral_src.width), dtype=mask_src.dtypes[0])
+            
+            reproject(
+                source=rasterio.band(mask_src, 1),
+                destination=mask_reprojected,
+                src_transform=mask_src.transform,
+                src_crs=mask_src.crs,
+                dst_transform=spectral_src.transform,
+                dst_crs=spectral_src.crs,
+                resampling=Resampling.nearest
+            )
+            
+            print(f"Mask reprojected to match spectral image: {mask_reprojected.shape}")
+            print(f"  DEBUG: Mask value range after reprojection: [{mask_reprojected.min():.6f}, {mask_reprojected.max():.6f}]")
+            print(f"  DEBUG: Mask unique values: {np.unique(mask_reprojected)}")
+            print(f"  DEBUG: Mask non-zero count: {np.count_nonzero(mask_reprojected)} / {mask_reprojected.size}")
+            height, width = spectral_src.shape
+            
+        else:
+            # If CRS match, calculate overlapping region
+            spec_base_window, mask_base_window, (height, width) = self._calculate_overlap_window(
+                spectral_src, mask_src
+            )
+            mask_reprojected = None
+        
+        n_bands = spectral_src.count
+        
+        # DEBUG: Check spectral data before extraction
+        print(f"\n  DEBUG: Checking spectral source data:")
+        print(f"  - Shape: {spectral_src.shape}")
+        print(f"  - Bands: {n_bands}")
+        print(f"  - Dtype: {spectral_src.dtypes[0]}")
+        print(f"  - Nodata value: {spectral_src.nodata}")
+        
+        # Read a small sample from center to check data validity
+        sample_size = min(100, spectral_src.height, spectral_src.width)
+        sample_y = spectral_src.height // 2
+        sample_x = spectral_src.width // 2
+        sample_window = Window(sample_x, sample_y, sample_size, sample_size)
+        sample_data = spectral_src.read(1, window=sample_window)  # Read first band
+        
+        print(f"  - Sample from center (band 1): shape={sample_data.shape}")
+        print(f"    Value range: [{np.nanmin(sample_data):.6f}, {np.nanmax(sample_data):.6f}]")
+        print(f"    NaN count: {np.isnan(sample_data).sum()} / {sample_data.size}")
+        print(f"    Zero count: {(sample_data == 0).sum()}")
+        print(f"    Non-zero, non-NaN count: {np.logical_and(~np.isnan(sample_data), sample_data != 0).sum()}")
+        
+        print(f"\nExtracting {self.patch_size}x{self.patch_size} patches with stride {self.stride}")
+        print(f"Number of spectral bands: {n_bands}")
+        
+        # Calculate number of patches
+        n_rows = (height - self.patch_size) // self.stride + 1
+        n_cols = (width - self.patch_size) // self.stride + 1
+        
+        print(f"Will extract up to {n_rows * n_cols} patches from this shard\n")
+        
+        shard_patch_count = 0
+        debug_first_few = 3  # Debug first few patches
+        
+        # Iterate through patch locations
+        for row_idx in range(n_rows):
+            for col_idx in range(n_cols):
+                row_start = row_idx * self.stride
+                col_start = col_idx * self.stride
+                
+                if mask_reprojected is not None:
+                    # Use reprojected mask - simple indexing
+                    spectral_window = Window(col_start, row_start, self.patch_size, self.patch_size)
+                    spectral_patch = spectral_src.read(window=spectral_window)
+                    mask_patch = mask_reprojected[
+                        row_start:row_start+self.patch_size,
+                        col_start:col_start+self.patch_size
+                    ]
+                else:
+                    # Use overlap windows
+                    spectral_window = Window(
+                        spec_base_window.col_off + col_start,
+                        spec_base_window.row_off + row_start,
+                        self.patch_size,
+                        self.patch_size
+                    )
+                    
+                    mask_window = Window(
+                        mask_base_window.col_off + col_start,
+                        mask_base_window.row_off + row_start,
+                        self.patch_size,
+                        self.patch_size
+                    )
+                    
+                    spectral_patch = spectral_src.read(window=spectral_window)
+                    mask_patch = mask_src.read(1, window=mask_window)
+                
+                stats['total_patches'] += 1
+                
+                # Debug first few patches
+                should_debug = stats['total_patches'] <= debug_first_few
+                
+                # Check validity (skip if too many nodata pixels)
+                if self._is_valid_patch(spectral_patch, mask_patch, min_valid_pixels, debug=should_debug):
+                    # Save patches as GeoTIFF files
+                    spectral_filename = f'patch_{patch_id:05d}_spectral.tif'
+                    mask_filename = f'patch_{patch_id:05d}_mask.tif'
+                    
+                    # Calculate transform for this patch
+                    if mask_reprojected is not None:
+                        patch_transform = spectral_src.transform * rasterio.Affine.translation(col_start, row_start)
+                    else:
+                        patch_transform = spectral_src.transform * rasterio.Affine.translation(
+                            spec_base_window.col_off + col_start,
+                            spec_base_window.row_off + row_start
+                        )
+                    
+                    # Save spectral patch
+                    with rasterio.open(
+                        self.spectral_dir / spectral_filename,
+                        'w',
+                        driver='GTiff',
+                        height=self.patch_size,
+                        width=self.patch_size,
+                        count=spectral_patch.shape[0],
+                        dtype=spectral_patch.dtype,
+                        crs=spectral_src.crs,
+                        transform=patch_transform,
+                        compress='lzw'
+                    ) as dst:
+                        dst.write(spectral_patch)
+                    
+                    # Save mask patch
+                    with rasterio.open(
+                        self.mask_dir / mask_filename,
+                        'w',
+                        driver='GTiff',
+                        height=self.patch_size,
+                        width=self.patch_size,
+                        count=1,
+                        dtype=mask_patch.dtype,
+                        crs=spectral_src.crs,
+                        transform=patch_transform,
+                        compress='lzw'
+                    ) as dst:
+                        dst.write(mask_patch, 1)
+                    
+                    stats['valid_patches'] += 1
+                    patch_id += 1
+                    shard_patch_count += 1
+                    
+                    if patch_id % 100 == 0:
+                        print(f"Extracted {patch_id} total valid patches...")
+                else:
+                    stats['skipped_patches'] += 1
+        
+        print(f"Shard complete: {shard_patch_count} valid patches extracted")
+        
+        return patch_id
+    
+    def _is_valid_patch(self, spectral_patch, mask_patch, min_valid_fraction, debug=False):
         """
         Check if a patch has sufficient valid data.
         
@@ -381,6 +500,7 @@ class PrithviPatchExtractor:
             spectral_patch: Spectral data patch (bands, height, width)
             mask_patch: Mask data patch (height, width)
             min_valid_fraction: Minimum fraction of valid pixels
+            debug: Whether to print debug information
         
         Returns:
             Boolean indicating if patch is valid
@@ -394,6 +514,20 @@ class PrithviPatchExtractor:
         # Combined validity
         valid_pixels = valid_spectral & valid_mask
         valid_fraction = valid_pixels.sum() / valid_pixels.size
+        
+        if debug:
+            print(f"\n  DEBUG _is_valid_patch:")
+            print(f"    Spectral patch shape: {spectral_patch.shape}, dtype: {spectral_patch.dtype}")
+            print(f"    Spectral value range: [{np.nanmin(spectral_patch):.6f}, {np.nanmax(spectral_patch):.6f}]")
+            print(f"    Spectral NaN count: {np.isnan(spectral_patch).sum()}")
+            print(f"    Spectral zero count: {(spectral_patch == 0).sum()}")
+            print(f"    Spectral valid pixels: {valid_spectral.sum()} / {valid_spectral.size}")
+            print(f"    Mask patch shape: {mask_patch.shape}, dtype: {mask_patch.dtype}")
+            print(f"    Mask unique values: {np.unique(mask_patch)}")
+            print(f"    Mask NaN count: {np.isnan(mask_patch).sum()}")
+            print(f"    Mask valid pixels: {valid_mask.sum()} / {valid_mask.size}")
+            print(f"    Combined valid fraction: {valid_fraction:.4f} (threshold: {min_valid_fraction:.4f})")
+            print(f"    Result: {'VALID' if valid_fraction >= min_valid_fraction else 'INVALID'}")
         
         return valid_fraction >= min_valid_fraction
     
@@ -497,7 +631,10 @@ class PrithviPatchExtractor:
 
 if __name__ == '__main__':
     # Configuration
-    SPECTRAL_FILE = 'data/planet_median_stAndrews.tif'
+    # SPECTRAL_FILE can be either:
+    #   - A single .tif file: 'data/planet_median_stAndrews.tif'
+    #   - A .zip file containing multiple .tif shards: 'data/median_images.zip'
+    SPECTRAL_FILE = 'data/median_images.zip'
     MASK_FILE = 'data/SAB2024_SVM_clean_smoothed.tif'
     PATCH_SIZE = 224  # Prithvi model input size
     STRIDE = 224  # Non-overlapping patches
@@ -513,10 +650,15 @@ if __name__ == '__main__':
         output_dir=OUTPUT_DIR
     )
     
-    # Extract patches
-    stats = extractor.extract_patches(min_valid_pixels=MIN_VALID_PIXELS)
+    try:
+        # Extract patches
+        stats = extractor.extract_patches(min_valid_pixels=MIN_VALID_PIXELS)
+        
+        # Create train/validation split
+        extractor.create_train_val_split(val_fraction=0.2, random_seed=42)
+        
+        print("\n✓ Patch extraction complete! Ready for Prithvi fine-tuning.")
     
-    # Create train/validation split
-    extractor.create_train_val_split(val_fraction=0.2, random_seed=42)
-    
-    print("\n✓ Patch extraction complete! Ready for Prithvi fine-tuning.")
+    finally:
+        # Cleanup temporary files if ZIP was used
+        extractor.cleanup()
