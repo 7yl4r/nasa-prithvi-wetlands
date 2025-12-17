@@ -48,6 +48,14 @@ import json
 import zipfile
 import tempfile
 import shutil
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(levelname)s: %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 class PrithviPatchExtractor:
     """Extract paired patches from spectral bands and mask for Prithvi model fine-tuning."""
@@ -307,13 +315,13 @@ class PrithviPatchExtractor:
                 stats['spectral_files_processed'] += 1
                 
                 with rasterio.open(spectral_file) as spectral_src:
-                    # DEBUG: Read a small raw sample before any processing
-                    print(f"  DEBUG RAW DATA CHECK:")
+                    # Debug: Read a small raw sample before any processing
                     raw_sample = spectral_src.read(1, window=Window(0, 0, min(10, spectral_src.width), min(10, spectral_src.height)))
-                    print(f"    Raw 10x10 sample from (0,0): {raw_sample.flatten()[:20]}")
-                    print(f"    Raw data type: {raw_sample.dtype}")
-                    print(f"    Raw contains NaN: {np.isnan(raw_sample).any()}")
-                    print(f"    Raw unique values (first 10): {np.unique(raw_sample)[:10]}")
+                    logger.debug(f"  RAW DATA CHECK:")
+                    logger.debug(f"    Raw 10x10 sample from (0,0): {raw_sample.flatten()[:20]}")
+                    logger.debug(f"    Raw data type: {raw_sample.dtype}")
+                    logger.debug(f"    Raw contains NaN: {np.isnan(raw_sample).any()}")
+                    logger.debug(f"    Raw unique values (first 10): {np.unique(raw_sample)[:10]}")
                     
                     patch_id = self._extract_patches_from_shard(
                         spectral_src, mask_src, patch_id, min_valid_pixels, stats
@@ -379,9 +387,9 @@ class PrithviPatchExtractor:
             )
             
             print(f"Mask reprojected to match spectral image: {mask_reprojected.shape}")
-            print(f"  DEBUG: Mask value range after reprojection: [{mask_reprojected.min():.6f}, {mask_reprojected.max():.6f}]")
-            print(f"  DEBUG: Mask unique values: {np.unique(mask_reprojected)}")
-            print(f"  DEBUG: Mask non-zero count: {np.count_nonzero(mask_reprojected)} / {mask_reprojected.size}")
+            logger.debug(f"  Mask value range after reprojection: [{mask_reprojected.min():.6f}, {mask_reprojected.max():.6f}]")
+            logger.debug(f"  Mask unique values: {np.unique(mask_reprojected)}")
+            logger.debug(f"  Mask non-zero count: {np.count_nonzero(mask_reprojected)} / {mask_reprojected.size}")
             height, width = spectral_src.shape
             
         else:
@@ -393,12 +401,12 @@ class PrithviPatchExtractor:
         
         n_bands = spectral_src.count
         
-        # DEBUG: Check spectral data before extraction
-        print(f"\n  DEBUG: Checking spectral source data:")
-        print(f"  - Shape: {spectral_src.shape}")
-        print(f"  - Bands: {n_bands}")
-        print(f"  - Dtype: {spectral_src.dtypes[0]}")
-        print(f"  - Nodata value: {spectral_src.nodata}")
+        # Debug: Check spectral data before extraction
+        logger.debug(f"\n  Checking spectral source data:")
+        logger.debug(f"  - Shape: {spectral_src.shape}")
+        logger.debug(f"  - Bands: {n_bands}")
+        logger.debug(f"  - Dtype: {spectral_src.dtypes[0]}")
+        logger.debug(f"  - Nodata value: {spectral_src.nodata}")
         
         # Read a small sample from center to check data validity
         sample_size = min(100, spectral_src.height, spectral_src.width)
@@ -407,11 +415,11 @@ class PrithviPatchExtractor:
         sample_window = Window(sample_x, sample_y, sample_size, sample_size)
         sample_data = spectral_src.read(1, window=sample_window)  # Read first band
         
-        print(f"  - Sample from center (band 1): shape={sample_data.shape}")
-        print(f"    Value range: [{np.nanmin(sample_data):.6f}, {np.nanmax(sample_data):.6f}]")
-        print(f"    NaN count: {np.isnan(sample_data).sum()} / {sample_data.size}")
-        print(f"    Zero count: {(sample_data == 0).sum()}")
-        print(f"    Non-zero, non-NaN count: {np.logical_and(~np.isnan(sample_data), sample_data != 0).sum()}")
+        logger.debug(f"  - Sample from center (band 1): shape={sample_data.shape}")
+        logger.debug(f"    Value range: [{np.nanmin(sample_data):.6f}, {np.nanmax(sample_data):.6f}]")
+        logger.debug(f"    NaN count: {np.isnan(sample_data).sum()} / {sample_data.size}")
+        logger.debug(f"    Zero count: {(sample_data == 0).sum()}")
+        logger.debug(f"    Non-zero, non-NaN count: {np.logical_and(~np.isnan(sample_data), sample_data != 0).sum()}")
         
         print(f"\nExtracting {self.patch_size}x{self.patch_size} patches with stride {self.stride}")
         print(f"Number of spectral bands: {n_bands}")
@@ -545,18 +553,18 @@ class PrithviPatchExtractor:
         valid_fraction = valid_pixels.sum() / valid_pixels.size
         
         if debug:
-            print(f"\n  DEBUG _is_valid_patch:")
-            print(f"    Spectral patch shape: {spectral_patch.shape}, dtype: {spectral_patch.dtype}")
-            print(f"    Spectral value range: [{np.nanmin(spectral_patch):.6f}, {np.nanmax(spectral_patch):.6f}]")
-            print(f"    Spectral NaN count: {np.isnan(spectral_patch).sum()}")
-            print(f"    Spectral zero count: {(spectral_patch == 0).sum()}")
-            print(f"    Spectral valid pixels: {valid_spectral.sum()} / {valid_spectral.size}")
-            print(f"    Mask patch shape: {mask_patch.shape}, dtype: {mask_patch.dtype}")
-            print(f"    Mask unique values: {np.unique(mask_patch)}")
-            print(f"    Mask NaN count: {np.isnan(mask_patch).sum()}")
-            print(f"    Mask valid pixels: {valid_mask.sum()} / {valid_mask.size}")
-            print(f"    Combined valid fraction: {valid_fraction:.4f} (threshold: {min_valid_fraction:.4f})")
-            print(f"    Result: {'VALID' if valid_fraction >= min_valid_fraction else 'INVALID'}")
+            logger.debug(f"\n  _is_valid_patch:")
+            logger.debug(f"    Spectral patch shape: {spectral_patch.shape}, dtype: {spectral_patch.dtype}")
+            logger.debug(f"    Spectral value range: [{np.nanmin(spectral_patch):.6f}, {np.nanmax(spectral_patch):.6f}]")
+            logger.debug(f"    Spectral NaN count: {np.isnan(spectral_patch).sum()}")
+            logger.debug(f"    Spectral zero count: {(spectral_patch == 0).sum()}")
+            logger.debug(f"    Spectral valid pixels: {valid_spectral.sum()} / {valid_spectral.size}")
+            logger.debug(f"    Mask patch shape: {mask_patch.shape}, dtype: {mask_patch.dtype}")
+            logger.debug(f"    Mask unique values: {np.unique(mask_patch)}")
+            logger.debug(f"    Mask NaN count: {np.isnan(mask_patch).sum()}")
+            logger.debug(f"    Mask valid pixels: {valid_mask.sum()} / {valid_mask.size}")
+            logger.debug(f"    Combined valid fraction: {valid_fraction:.4f} (threshold: {min_valid_fraction:.4f})")
+            logger.debug(f"    Result: {'VALID' if valid_fraction >= min_valid_fraction else 'INVALID'}")
         
         return valid_fraction >= min_valid_fraction
     
@@ -672,6 +680,13 @@ if __name__ == '__main__':
     STRIDE = 224  # Non-overlapping patches
     OUTPUT_DIR = 'data/tuning_patches'
     MIN_VALID_PIXELS = 0.7  # Require 70% valid pixels
+    
+    # Enable debug logging if needed (set to True to see detailed debug information)
+    # Debug output includes: raw data checks, mask statistics, spectral data validation,
+    # and per-patch validity information for the first few patches
+    DEBUG_MODE = False
+    if DEBUG_MODE:
+        logger.setLevel(logging.DEBUG)
     
     # Initialize extractor
     extractor = PrithviPatchExtractor(
