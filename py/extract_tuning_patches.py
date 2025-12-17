@@ -57,7 +57,8 @@ class PrithviPatchExtractor:
         Initialize the patch extractor.
         
         Args:
-            spectral_path: Path to spectral bands TIF file or ZIP file containing TIF shards
+            spectral_path: Path to spectral bands TIF file, ZIP file containing TIF shards, 
+                          or directory containing TIF files
             mask_path: Path to seagrass mask TIF file
             patch_size: Size of patches to extract (default 224x224 for Prithvi)
             stride: Step size between patches (default 224 for non-overlapping)
@@ -69,15 +70,22 @@ class PrithviPatchExtractor:
         self.stride = stride
         self.output_dir = Path(output_dir)
         
-        # Check if spectral_path is a zip file
-        self.is_zip = self.spectral_path.suffix.lower() == '.zip'
+        # Determine input type and collect spectral files
+        self.is_zip = False
+        self.is_directory = False
         self.temp_dir = None
         self.spectral_files = []
         
-        if self.is_zip:
+        if self.spectral_path.is_dir():
+            print(f"Detected directory: {self.spectral_path}")
+            self.is_directory = True
+            self._collect_tif_files_from_directory()
+        elif self.spectral_path.suffix.lower() == '.zip':
             print(f"Detected ZIP archive: {self.spectral_path}")
+            self.is_zip = True
             self._extract_zip()
         else:
+            print(f"Detected single TIF file: {self.spectral_path}")
             self.spectral_files = [self.spectral_path]
         
         # Create output directories
@@ -86,6 +94,27 @@ class PrithviPatchExtractor:
         self.spectral_dir.mkdir(parents=True, exist_ok=True)
         self.mask_dir.mkdir(parents=True, exist_ok=True)
     
+    def _collect_tif_files_from_directory(self):
+        """Collect all TIF files from a directory."""
+        # Find all .tif and .tiff files in the directory (not recursive)
+        tif_files = list(self.spectral_path.glob('*.tif')) + list(self.spectral_path.glob('*.tiff'))
+        
+        if not tif_files:
+            raise ValueError(f"No .tif files found in directory: {self.spectral_path}")
+        
+        # Sort files for consistent ordering
+        self.spectral_files = sorted(tif_files)
+        print(f"Found {len(self.spectral_files)} TIF files in directory")
+        
+        # Print first few filenames for verification
+        if len(self.spectral_files) <= 5:
+            for f in self.spectral_files:
+                print(f"  - {f.name}")
+        else:
+            for f in self.spectral_files[:3]:
+                print(f"  - {f.name}")
+            print(f"  ... and {len(self.spectral_files) - 3} more files")
+    
     def _extract_zip(self):
         """Extract TIF files from ZIP archive to temporary directory."""
         self.temp_dir = Path(tempfile.mkdtemp(prefix='spectral_shards_'))
@@ -93,7 +122,7 @@ class PrithviPatchExtractor:
         
         with zipfile.ZipFile(self.spectral_path, 'r') as zip_ref:
             # Get all .tif files in the archive
-            tif_files = [f for f in zip_ref.namelist() if f.lower().endswith('.tif')]
+            tif_files = [f for f in zip_ref.namelist() if f.lower().endswith('.tif') or f.lower().endswith('.tiff')]
             
             if not tif_files:
                 raise ValueError(f"No .tif files found in {self.spectral_path}")
@@ -294,7 +323,7 @@ class PrithviPatchExtractor:
         if save_metadata:
             metadata = {
                 'spectral_path': str(self.spectral_path),
-                'is_zip_archive': self.is_zip,
+                'input_type': 'zip' if self.is_zip else ('directory' if self.is_directory else 'single_file'),
                 'spectral_files_processed': stats['spectral_files_processed'],
                 'mask_path': str(self.mask_path),
                 'patch_size': self.patch_size,
@@ -634,7 +663,10 @@ if __name__ == '__main__':
     # SPECTRAL_FILE can be either:
     #   - A single .tif file: 'data/planet_median_stAndrews.tif'
     #   - A .zip file containing multiple .tif shards: 'data/median_images.zip'
-    SPECTRAL_FILE = 'data/median_images.zip'
+    #   - A directory containing .tif files: 'data/spectral_shards/'
+    # SPECTRAL_FILE = 'data/planet_median_stAndrews.tif'
+    # SPECTRAL_FILE = 'data/median_images_8band_shards.zip'
+    SPECTRAL_FILE = 'data/median_images'
     MASK_FILE = 'data/SAB2024_SVM_clean_smoothed.tif'
     PATCH_SIZE = 224  # Prithvi model input size
     STRIDE = 224  # Non-overlapping patches
