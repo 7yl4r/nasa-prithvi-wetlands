@@ -4,7 +4,7 @@ Running this file will cut fine-tuning patches to be used with prithvi.
 It assumes that two .tif files have been placed in data:
 
     SPECTRAL_FILE = 'data/planet_median_stAndrews.tif'
-    MASK_FILE = 'data/SAB2024_SVM_clean_smoothed.tif'
+    MASK_FILE = 'data/SIMM_2024_w_seagrass_sand_water.tif'
 
 -------------------------------------------------------------
 
@@ -675,7 +675,7 @@ if __name__ == '__main__':
     # SPECTRAL_FILE = 'data/planet_median_stAndrews.tif'
     # SPECTRAL_FILE = 'data/median_images_8band_shards.zip'
     SPECTRAL_FILE = 'data/median_images'
-    MASK_FILE = 'data/SAB2024_SVM_clean_smoothed.tif'
+    MASK_FILE = 'data/SIMM_2024_w_seagrass_sand_water.tif'
     PATCH_SIZE = 224  # Prithvi model input size
     STRIDE = 224  # Non-overlapping patches
     OUTPUT_DIR = 'data/tuning_patches'
