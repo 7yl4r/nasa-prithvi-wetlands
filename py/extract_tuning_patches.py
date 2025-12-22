@@ -53,6 +53,7 @@ import logging
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
+    #level=logging.DEBUG,
     format='%(levelname)s: %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -278,7 +279,7 @@ class PrithviPatchExtractor:
         
         return spec_window, mask_window, (overlap_height, overlap_width)
     
-    def extract_patches(self, min_valid_pixels=0.7, save_metadata=True):
+    def extract_patches(self, min_valid_pixels=0.00001, save_metadata=True):
         """
         Extract patches from both spectral and mask files.
         Processes all spectral shards if a ZIP file was provided.
@@ -674,12 +675,18 @@ if __name__ == '__main__':
     #   - A directory containing .tif files: 'data/spectral_shards/'
     # SPECTRAL_FILE = 'data/planet_median_stAndrews.tif'
     # SPECTRAL_FILE = 'data/median_images_8band_shards.zip'
-    SPECTRAL_FILE = 'data/median_images'
+    # SPECTRAL_FILE = 'data/median_images'  # v03
+    SPECTRAL_FILE = 'data/seasonal_s2_stack.tif'
     MASK_FILE = 'data/SIMM_2024_seagrass_sand_water_land.tif'
     PATCH_SIZE = 224  # Prithvi model input size
     STRIDE = 224  # Non-overlapping patches
     OUTPUT_DIR = 'data/tuning_patches'
-    MIN_VALID_PIXELS = 0.7  # Require 70% valid pixels
+
+    # clear the output directory if it exists
+    output_path = Path(OUTPUT_DIR)
+    if output_path.exists():
+        print(f"Clearing existing output directory: {OUTPUT_DIR}")
+        shutil.rmtree(output_path)
     
     # Enable debug logging if needed (set to True to see detailed debug information)
     # Debug output includes: raw data checks, mask statistics, spectral data validation,
@@ -699,7 +706,7 @@ if __name__ == '__main__':
     
     try:
         # Extract patches
-        stats = extractor.extract_patches(min_valid_pixels=MIN_VALID_PIXELS)
+        stats = extractor.extract_patches()
         
         # Create train/validation split
         extractor.create_train_val_split(val_fraction=0.2, random_seed=42)
