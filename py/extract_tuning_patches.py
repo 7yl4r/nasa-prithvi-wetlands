@@ -20,14 +20,14 @@ It assumes that two .tif files have been placed in data:
     The 2024 spectral mean image is built from 72 images.
     This image cannot be shared due to licensing restrictions.
 
-    The seagrass image can be downloaded [here](https://usf.box.com/s/xr4zqg7vj9ynqxfn9zz0oj3r91ki66ui).
+    The seagrass image can be created using [this GEE script](https://code.earthengine.google.com/?scriptPath=users%2Ftylarmurray%2Fprithvi%3Aprithvi_planet_median_creation).
     In addition to application of the seagrass classifier (GEE script available [here](From the SIMM Seagrass project two images are obtained of the St Andrew's sound region.
 
     1. A seagrass classification .tif created using the mode of classifications on images taken throughout a year.
     2. A spectral median .tif created using all Planet SuperDove images (346 images).
 
     The spectral mean image cannot be shared due to licensing restrictions.
-    The GEE script to generate this image is [here](https://code.earthengine.google.com/de9e9e1dc344d4cf8c234b30809665b8).
+    The GEE script to generate this image is [here](https://code.earthengine.google.com/?scriptPath=users%2Ftylarmurray%2Fprithvi%3Aprithvi_planet_median_creation).
     This script will not work unless you have access to the (restricted) Planet SuperDove image collection asset.
 
     The seagrass image for 2024 can be downloaded [here](https://usf.box.com/s/xr4zqg7vj9ynqxfn9zz0oj3r91ki66ui).
@@ -675,7 +675,7 @@ if __name__ == '__main__':
     # SPECTRAL_FILE = 'data/planet_median_stAndrews.tif'
     # SPECTRAL_FILE = 'data/median_images_8band_shards.zip'
     SPECTRAL_FILE = 'data/median_images'
-    MASK_FILE = 'data/SIMM_2024_w_seagrass_sand_water.tif'
+    MASK_FILE = 'data/SIMM_2024_seagrass_sand_water_land.tif'
     PATCH_SIZE = 224  # Prithvi model input size
     STRIDE = 224  # Non-overlapping patches
     OUTPUT_DIR = 'data/tuning_patches'
