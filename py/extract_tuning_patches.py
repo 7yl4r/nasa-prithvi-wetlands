@@ -4,7 +4,7 @@ Running this file will cut fine-tuning patches to be used with prithvi.
 It assumes that two .tif files have been placed in data:
 
     SPECTRAL_FILE = 'data/planet_median_stAndrews.tif'
-    MASK_FILE = 'data/SAB2024_SVM_clean_smoothed.tif'
+    MASK_FILE = 'data/SIMM_2024_w_seagrass_sand_water.tif'
 
 -------------------------------------------------------------
 
@@ -20,14 +20,14 @@ It assumes that two .tif files have been placed in data:
     The 2024 spectral mean image is built from 72 images.
     This image cannot be shared due to licensing restrictions.
 
-    The seagrass image can be downloaded [here](https://usf.box.com/s/xr4zqg7vj9ynqxfn9zz0oj3r91ki66ui).
+    The seagrass image can be created using [this GEE script](https://code.earthengine.google.com/?scriptPath=users%2Ftylarmurray%2Fprithvi%3Aprithvi_planet_median_creation).
     In addition to application of the seagrass classifier (GEE script available [here](From the SIMM Seagrass project two images are obtained of the St Andrew's sound region.
 
     1. A seagrass classification .tif created using the mode of classifications on images taken throughout a year.
     2. A spectral median .tif created using all Planet SuperDove images (346 images).
 
     The spectral mean image cannot be shared due to licensing restrictions.
-    The GEE script to generate this image is [here](https://code.earthengine.google.com/de9e9e1dc344d4cf8c234b30809665b8).
+    The GEE script to generate this image is [here](https://code.earthengine.google.com/?scriptPath=users%2Ftylarmurray%2Fprithvi%3Aprithvi_planet_median_creation).
     This script will not work unless you have access to the (restricted) Planet SuperDove image collection asset.
 
     The seagrass image for 2024 can be downloaded [here](https://usf.box.com/s/xr4zqg7vj9ynqxfn9zz0oj3r91ki66ui).
@@ -35,23 +35,27 @@ It assumes that two .tif files have been placed in data:
 
 -------------------------------------------------------------
 
-The class defined below is generic, but the only current usage is in the main section 
-at the bottom of this file.
+This script uses the PrithviPatchExtractor class to extract training patches.
 """
 
-
+from pathlib import Path
+import shutil
 import logging
+
 from prithvi_patch_extractor import PrithviPatchExtractor
 
 # Configure logging
-DEBUG_MODE = False  # Set to True to see DEBUG messages
 logging.basicConfig(
-    level=logging.DEBUG if DEBUG_MODE else logging.INFO,
+    level=logging.INFO,
+    #level=logging.DEBUG,
     format='%(levelname)s: %(message)s'
 )
 logger = logging.getLogger(__name__)
 
+
 if __name__ == '__main__':
+    # Configuration
+    # SPECTRAL_FILE can be either:
         """
         Initialize the patch extractor.
         
@@ -269,7 +273,7 @@ if __name__ == '__main__':
         
         return spec_window, mask_window, (overlap_height, overlap_width)
     
-    def extract_patches(self, min_valid_pixels=0.7, save_metadata=True):
+    def extract_patches(self, min_valid_pixels=0.00001, save_metadata=True):
         """
         Extract patches from both spectral and mask files.
         Processes all spectral shards if a ZIP file was provided.
@@ -665,20 +669,21 @@ if __name__ == '__main__':
     #   - A directory containing .tif files: 'data/spectral_shards/'
     # SPECTRAL_FILE = 'data/planet_median_stAndrews.tif'
     # SPECTRAL_FILE = 'data/median_images_8band_shards.zip'
-    SPECTRAL_FILE = 'data/median_images'
-    MASK_FILE = 'data/SAB2024_SVM_clean_smoothed.tif'
+    # SPECTRAL_FILE = 'data/median_images'  # v03
+    SPECTRAL_FILE = 'data/seasonal_s2_stack.tif'
+    MASK_FILE = 'data/SIMM_2024_seagrass_sand_water_land.tif'
     PATCH_SIZE = 224  # Prithvi model input size
     STRIDE = 224  # Non-overlapping patches
     OUTPUT_DIR = 'data/tuning_patches'
-    MIN_VALID_PIXELS = 0.7  # Require 70% valid pixels
-    
-    # Enable debug logging if needed (set to True to see detailed debug information)
-    # Debug output includes: raw data checks, mask statistics, spect
+
     # clear the output directory if it exists
     output_path = Path(OUTPUT_DIR)
     if output_path.exists():
         print(f"Clearing existing output directory: {OUTPUT_DIR}")
-        shutil.rmtree(output_path)ral data validation,
+        shutil.rmtree(output_path)
+    
+    # Enable debug logging if needed (set to True to see detailed debug information)
+    # Debug output includes: raw data checks, mask statistics, spectral data validation,
     # and per-patch validity information for the first few patches
     DEBUG_MODE = False
     if DEBUG_MODE:
@@ -695,7 +700,7 @@ if __name__ == '__main__':
     
     try:
         # Extract patches
-        stats = extractor.extract_patches(min_valid_pixels=MIN_VALID_PIXELS)
+        stats = extractor.extract_patches()
         
         # Create train/validation split
         extractor.create_train_val_split(val_fraction=0.2, random_seed=42)
