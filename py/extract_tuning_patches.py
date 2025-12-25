@@ -35,14 +35,20 @@ It assumes that two .tif files have been placed in data:
 
 -------------------------------------------------------------
 
-This script uses the PrithviPatchExtractor class to extract training patches.
+The class defined below is generic, but the only current usage is in the main section 
+at the bottom of this file.
 """
 
+
+import numpy as np
+import rasterio
+from rasterio.windows import Window
 from pathlib import Path
+import json
+import zipfile
+import tempfile
 import shutil
 import logging
-
-from prithvi_patch_extractor import PrithviPatchExtractor
 
 # Configure logging
 logging.basicConfig(
@@ -52,10 +58,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
-if __name__ == '__main__':
-    # Configuration
-    # SPECTRAL_FILE can be either:
+class PrithviPatchExtractor:
+    """Extract paired patches from spectral bands and mask for Prithvi model fine-tuning."""
+    
+    def __init__(self, spectral_path, mask_path, patch_size=224, stride=224, output_dir='patches'):
         """
         Initialize the patch extractor.
         
