@@ -50,7 +50,12 @@ import tempfile
 import shutil
 import logging
 
+
 # Configure logging
+# Enable debug logging if needed (set to True to see detailed debug information)
+# Debug output includes: raw data checks, mask statistics, spectral data validation,
+# and per-patch validity information for the first few patches
+
 logging.basicConfig(
     level=logging.INFO,
     #level=logging.DEBUG,
@@ -666,53 +671,3 @@ class PrithviPatchExtractor:
             print(f"  - Removed: {self.mask_dir}")
         print(f"✓ Cleanup complete!")
 
-
-if __name__ == '__main__':
-    # Configuration
-    # SPECTRAL_FILE can be either:
-    #   - A single .tif file: 'data/planet_median_stAndrews.tif'
-    #   - A .zip file containing multiple .tif shards: 'data/median_images.zip'
-    #   - A directory containing .tif files: 'data/spectral_shards/'
-    # SPECTRAL_FILE = 'data/planet_median_stAndrews.tif'
-    # SPECTRAL_FILE = 'data/median_images_8band_shards.zip'
-    # SPECTRAL_FILE = 'data/median_images'  # v03
-    SPECTRAL_FILE = 'data/seasonal_s2_stack.tif'
-    MASK_FILE = 'data/SIMM_2024_seagrass_sand_water_land.tif'
-    PATCH_SIZE = 224  # Prithvi model input size
-    STRIDE = 224  # Non-overlapping patches
-    OUTPUT_DIR = 'data/tuning_patches'
-
-    # clear the output directory if it exists
-    output_path = Path(OUTPUT_DIR)
-    if output_path.exists():
-        print(f"Clearing existing output directory: {OUTPUT_DIR}")
-        shutil.rmtree(output_path)
-    
-    # Enable debug logging if needed (set to True to see detailed debug information)
-    # Debug output includes: raw data checks, mask statistics, spectral data validation,
-    # and per-patch validity information for the first few patches
-    DEBUG_MODE = False
-    if DEBUG_MODE:
-        logger.setLevel(logging.DEBUG)
-    
-    # Initialize extractor
-    extractor = PrithviPatchExtractor(
-        spectral_path=SPECTRAL_FILE,
-        mask_path=MASK_FILE,
-        patch_size=PATCH_SIZE,
-        stride=STRIDE,
-        output_dir=OUTPUT_DIR
-    )
-    
-    try:
-        # Extract patches
-        stats = extractor.extract_patches()
-        
-        # Create train/validation split
-        extractor.create_train_val_split(val_fraction=0.2, random_seed=42)
-        
-        print("\n✓ Patch extraction complete! Ready for Prithvi fine-tuning.")
-    
-    finally:
-        # Cleanup temporary files if ZIP was used
-        extractor.cleanup()
