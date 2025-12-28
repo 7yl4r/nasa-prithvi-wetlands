@@ -36,16 +36,13 @@ Dependencies are managed in `pyproject.toml`.
 #    in data/ as described at top of extract_tuning_patches.py.
 
 # 2) Create fine tuning patch chips from the spectral and SVM files.
-python py/extract_tuning_patches.py
+python scripts/extract_tuning_patches_mangrove_sentinel2.py
 
-# 3) compress & zip the patches 
-tar -cvjf data/seagrass_tuning_patches.tar.bz2 data/tuning_patches
+# 3) Manually upload the file to google drive
 
-# 4) Manually upload the file to google drive
+# 4) Update any links in .ipynb files to use new file ID.
 
-# 5) Update any links in .ipynb files to use new file ID.
-
-# 6) Copy statistics into any .ipynb files
-python py/calculate_chip_statistics.py 
+# 5) Calculate and copy statistics into any .ipynb files
+python scripts/calculate_chip_statistics.py 
 ```
 

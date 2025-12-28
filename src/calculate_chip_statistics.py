@@ -13,7 +13,20 @@ from pathlib import Path
 from tqdm import tqdm
 
 
-def calculate_chip_statistics(data_root='data/tuning_patches', use_validation=True):
+def calculate_chip_statistics(
+        data_root='data/output/tuning_patches', 
+        use_validation=True,
+        band_names = [     # Band names for Planet SuperDove imagery
+            "COASTAL BLUE",
+            "BLUE",
+            "GREEN I",
+            "GREEN II",
+            "YELLOW",
+            "RED",
+            "RED-EDGE",
+            "NEAR-INFRARED",
+        ],
+    ):
     """
     Calculate mean and std for all bands across all chip images.
     
@@ -25,19 +38,7 @@ def calculate_chip_statistics(data_root='data/tuning_patches', use_validation=Tr
         Tuple of (means_dict, stds_dict) with band names as keys
     """
     data_root = Path(data_root)
-    
-    # Band names for Planet SuperDove imagery
-    band_names = [
-        "COASTAL BLUE",
-        "BLUE",
-        "GREEN I",
-        "GREEN II",
-        "YELLOW",
-        "RED",
-        "RED-EDGE",
-        "NEAR-INFRARED",
-    ]
-    
+        
     # Collect all chip files
     chip_files = []
     
@@ -161,42 +162,3 @@ def save_statistics(means_dict, stds_dict, output_file='data/tuning_patches/chip
         f.write('}\n')
     
     print(f"Statistics saved to: {output_path}")
-
-
-if __name__ == '__main__':
-    import argparse
-    
-    parser = argparse.ArgumentParser(
-        description='Calculate statistics for tuning patch chips'
-    )
-    parser.add_argument(
-        '--data-root',
-        default='data/tuning_patches',
-        help='Root directory containing training_chips and validation_chips'
-    )
-    parser.add_argument(
-        '--no-validation',
-        action='store_true',
-        help='Exclude validation chips from statistics'
-    )
-    parser.add_argument(
-        '--output',
-        default='data/tuning_patches/chip_statistics.py',
-        help='Output file path for statistics'
-    )
-    
-    args = parser.parse_args()
-    
-    # Calculate statistics
-    means_dict, stds_dict = calculate_chip_statistics(
-        data_root=args.data_root,
-        use_validation=not args.no_validation
-    )
-    
-    # Print statistics
-    print_statistics(means_dict, stds_dict)
-    
-    # Save to file
-    save_statistics(means_dict, stds_dict, output_file=args.output)
-    
-    print("\n✓ Statistics calculation complete!")
