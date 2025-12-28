@@ -14,11 +14,11 @@ from src.PrithviPatchExtractor import PrithviPatchExtractor
 #   - A single .tif file: 'data/input/spectral/seasonal_s2_stack.tif'
 #   - A .zip file containing multiple .tif shards: 'ddata/input/spectral/spectral_median_planet_shards.zip'
 #   - A directory containing .tif files: 'data/input/spectral/spectral_median_planet_2023_to_2025/'
-# SPECTRAL_FILE = 'data/planet_median_stAndrews.tif'
-# SPECTRAL_FILE = 'data/input/spectral/spectral_median_planet_shards.zip'
-# SPECTRAL_FILE = 'data/input/spectral/spectral_median_planet_2023_to_2025'  # v03
-SPECTRAL_FILE = 'data/input/spectral/seasonal_s2_stack.tif'
-MASK_FILE = 'data/input/classmaps/SIMM_2024_seagrass_sand_water_land.tif'
+# SPECTRAL_FILE = 'data/stAndrews_planet_median.tif'
+# SPECTRAL_FILE = 'data/input/spectral/stAndrews_spectral_median_planet_shards.zip'
+# SPECTRAL_FILE = 'data/input/spectral/stAndrews_spectral_median_planet_2023_to_2025'  # v03
+SPECTRAL_FILE = 'data/input/spectral/stAndrews_seasonal_s2_stack.tif'
+MASK_FILE = 'data/input/classmaps/stAndrews_SIMM_2024_seagrass_sand_water_land.tif'
 PATCH_SIZE = 224  # Prithvi model input size
 STRIDE = 224  # Non-overlapping patches
 OUTPUT_DIR = 'data/output/tuning_patches'
