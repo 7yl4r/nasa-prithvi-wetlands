@@ -73,6 +73,11 @@ class PrithviPatchExtractor:
         Args:
             spectral_path: Path to spectral bands TIF file, ZIP file containing TIF shards, 
                           or directory containing TIF files
+                spectral_path can be either:
+                  - A single .tif file: 'data/input/spectral/seasonal_s2_stack.tif'
+                  - A .zip file containing multiple .tif shards: 'ddata/input/spectral/spectral_median_planet_shards.zip'
+                  - A directory containing .tif files: 'data/input/spectral/spectral_median_planet_2023_to_2025/'
+
             mask_path: Path to seagrass mask TIF file
             patch_size: Size of patches to extract (default 224x224 for Prithvi)
             stride: Step size between patches (default 224 for non-overlapping)
