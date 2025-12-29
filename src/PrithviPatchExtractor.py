@@ -676,3 +676,45 @@ class PrithviPatchExtractor:
             print(f"  - Removed: {self.mask_dir}")
         print(f"✓ Cleanup complete!")
 
+def extract_patches(
+        spectral_path,
+        mask_path,
+        patch_size,
+        stride,
+        output_dir,
+        output_file
+    ):
+    # clear the output directory if it exists
+    output_path = Path(output_dir)
+    if output_path.exists():
+        print(f"Clearing existing output directory: {output_dir}")
+        shutil.rmtree(output_path)
+
+    # Initialize extractor
+    extractor = PrithviPatchExtractor(
+        spectral_path=spectral_path,
+        mask_path=mask_path,
+        patch_size=patch_size,
+        stride=stride,
+        output_dir=output_dir
+    )
+
+    try:
+        # Extract patches
+        stats = extractor.extract_patches()
+        
+        # Create train/validation split
+        extractor.create_train_val_split(val_fraction=0.2, random_seed=42)
+        
+        print("\n✓ Patch extraction complete! Ready for Prithvi fine-tuning.")
+        
+        # Compress the tuning patches for easy sharing/upload
+        import subprocess
+        print(f"\nCompressing tuning patches...")
+        tar_filename = output_dir.replace('tuning_patches', output_file)
+        subprocess.run(['tar', '-cjf', tar_filename, output_dir], check=True)
+        print(f"✓ Compressed patches saved to: {tar_filename}")
+
+    finally:
+        # Cleanup temporary files if ZIP was used
+        extractor.cleanup()
